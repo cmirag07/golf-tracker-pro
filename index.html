@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Golf Pro V10 - GitHub Edition</title>
     <style>
-        :root { --allievo-color: #1a472a; --maestro-color: #1a237e; --accent: #2e7d32; --bg: #f0f4f0; --red: #d32f2f; --orange: #f57c00; --wa: #25D366; }
+        :root { --allievo-color: #1a472a; --maestro-color: #1a237e; --admin-color: #b71c1c; --accent: #2e7d32; --bg: #f0f4f0; --red: #d32f2f; --orange: #f57c00; --wa: #25D366; }
         body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg); margin: 0; display: flex; justify-content: center; }
         #app-container { width: 100%; max-width: 450px; background: white; min-height: 100vh; position: relative; padding-bottom: 40px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
         header { background: var(--allievo-color); color: white; padding: 20px; text-align: center; font-weight: bold; font-size: 1.3em; position: sticky; top: 0; z-index: 100; }
         .maestro-header { background: var(--maestro-color) !important; }
+        .admin-header { background: var(--admin-color) !important; }
         .screen { display: none; padding: 15px; box-sizing: border-box; animation: fadeIn 0.3s; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .active { display: block; }
@@ -17,6 +18,7 @@
         .btn-main { width: 100%; padding: 16px; background: var(--allievo-color); color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; margin-top: 5px; }
         .card-menu { background: white; border: 2px solid #eee; border-radius: 20px; padding: 20px; cursor: pointer; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; transition: 0.2s; }
         .card-menu:active { transform: scale(0.98); background: #f9f9f9; }
+        .card-admin { border: 2px solid var(--admin-color); background: #ffebee; color: var(--admin-color); }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
         th { text-align: left; color: #999; padding: 10px; border-bottom: 2px solid #eee; }
         td { padding: 12px 10px; border-bottom: 1px solid #eee; }
@@ -28,6 +30,7 @@
         .score-info { background: var(--allievo-color); color: white; padding: 15px; border-radius: 15px; text-align: center; margin-bottom: 20px; display: flex; justify-content: space-around; }
         .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
         .stat-grid label { font-size: 11px; color: #666; display: block; margin-bottom: 4px; }
+        .allievo-item { background: white; border: 1px solid #eee; padding: 15px; border-radius: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -55,14 +58,25 @@
 
         <section id="menu-screen" class="screen">
             <div style="display:flex; justify-content:space-between; margin-bottom:20px; align-items:center;">
-                <div>🏌️ <b id="user-display">...</b><br><small id="my-id-display" style="font-size:9px; color:var(--orange);"></small></div>
+                <div>
+                    🏌️ <b id="user-display">...</b><br>
+                    <small id="my-id-display" style="font-size:9px; color:var(--orange);"></small>
+                </div>
                 <button onclick="logout()" style="color:red; border:1px solid red; background:none; padding:6px 12px; border-radius:8px; font-weight:bold;">ESCI</button>
             </div>
+            
+            <div id="wrapper-admin" style="display:none; margin-bottom:15px;">
+                <div class="card-menu card-admin" onclick="vaiA('admin-screen')">
+                    <span>🛡️</span><b>GESTIONE SISTEMA (ADMIN)</b>
+                </div>
+            </div>
+
             <div id="wrapper-maestro" style="display:none;">
                 <div class="card-menu" style="border: 2px solid var(--maestro-color);" onclick="vaiA('maestro-screen')">
                     <span>🎓</span><span style="color:var(--maestro-color); font-weight:bold;">AREA MAESTRO / COACH</span>
                 </div>
             </div>
+
             <div class="card-menu" style="background: var(--allievo-color); color: white;" onclick="vaiA('campo-screen')">
                 <span>⛳</span><span>SCORE IN CAMPO</span>
             </div>
@@ -75,6 +89,12 @@
             <div class="card-menu" onclick="vaiA('profile-screen')">
                 <span>👤</span><span>PROFILO & HCP</span>
             </div>
+        </section>
+
+        <section id="admin-screen" class="screen">
+            <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
+            <h3>🛡️ Gestione Sistema</h3>
+            <div id="lista-utenti-admin"></div>
         </section>
 
         <section id="campo-screen" class="screen">
@@ -134,6 +154,12 @@
             <div id="lista-allievi"></div>
         </section>
 
+        <section id="esercizi-screen" class="screen">
+            <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
+            <h3>📁 Il Mio Locker</h3>
+            <div id="locker-contenuto"></div>
+        </section>
+
         <div id="modal-inserimento">
             <div class="modal-content">
                 <h3>🎯 Registra Colpo</h3>
@@ -186,11 +212,6 @@
             </div>
         </div>
 
-        <section id="esercizi-screen" class="screen">
-            <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
-            <h3>📁 Il Mio Locker</h3>
-            <div id="locker-contenuto"></div>
-        </section>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>

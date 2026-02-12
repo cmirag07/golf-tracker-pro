@@ -16,6 +16,7 @@ let idAllievoSelezionato = null;
 let hcpUtente = 54;
 let mioRuolo = "allievo";
 let datiGiro = [];
+const ADMIN_EMAIL = "cmirag07@gmail.com";
 
 const mappaCampi = {
     "Vigatto": { par: [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3], index: [9, 6, 2, 14, 18, 8, 11, 15, 1, 10, 7, 5, 13, 17, 12, 3, 16, 4], cr: 69.3, slope: 126, parTot: 54 },
@@ -44,11 +45,19 @@ auth.onAuthStateChanged(async (user) => {
         document.getElementById('p-tel').value = d.telefono || '';
         document.getElementById('p-maestro-id').value = d.maestroId || '';
 
-        if (mioRuolo === "maestro") {
+        // LOGICA ADMIN E MAESTRO
+        if (user.email === ADMIN_EMAIL) {
+            document.getElementById('wrapper-admin').style.display = 'block';
+            document.getElementById('app-header').classList.add('admin-header');
+            caricaAdminPanel();
+        }
+
+        if (mioRuolo === "maestro" || user.email === ADMIN_EMAIL) {
             document.getElementById('wrapper-maestro').style.display = 'block';
-            document.getElementById('app-header').classList.add('maestro-header');
+            if (mioRuolo === "maestro") document.getElementById('app-header').classList.add('maestro-header');
             caricaDashboardMaestro(user.uid);
         }
+
         caricaLocker(user.uid);
         aggiornaTabellaEStats(user.uid, 'body-allievo', 'allievo-club-stats');
         vaiA('menu-screen');
@@ -103,7 +112,7 @@ function upScore(i, t, v) {
     document.getElementById('total-putts').innerText = p;
 }
 
-// GESTIONE PRATICA E SACCA
+// GESTIONE PRATICA E SACCA (CON VOLO)
 function aggiornaTabellaEStats(uid, tid, sid) {
     db.collection("colpi").where("userId", "==", uid).onSnapshot(snap => {
         let colpi = [];
@@ -165,18 +174,28 @@ function caricaLocker(uid) {
     });
 }
 
-// UTILITY NAVIGAZIONE
+// NAVIGAZIONE E AUTH
 function vaiA(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo(0,0); }
 function logout() { auth.signOut().then(() => location.reload()); }
 function gestisciAuth() { auth.signInWithEmailAndPassword(document.getElementById('auth-email').value, document.getElementById('auth-password').value).catch(e => alert("Errore accesso: " + e.message)); }
 function registraUtente() {
     const e = document.getElementById('reg-email').value, p = document.getElementById('reg-password').value;
     auth.createUserWithEmailAndPassword(e, p).then(res => {
-        return db.collection("utenti").doc(res.user.uid).set({ nome: document.getElementById('reg-nome').value, ruolo: "allievo", hcp: 54, maestroId: "", maestroStato: "" });
+        return db.collection("utenti").doc(res.user.uid).set({ 
+            nome: document.getElementById('reg-nome').value, 
+            cognome: document.getElementById('reg-cognome').value,
+            ruolo: "allievo", hcp: 54, maestroId: "", maestroStato: "" 
+        });
     }).catch(err => alert(err.message));
+}
+function recuperaPassword() {
+    const email = document.getElementById('auth-email').value;
+    if(!email) return alert("Inserisci l'email");
+    auth.sendPasswordResetEmail(email).then(() => alert("Email di reset inviata!")).catch(e => alert(e.message));
 }
 function apriModal() { document.getElementById('modal-inserimento').style.display='flex'; }
 function chiudiModal() { document.getElementById('modal-inserimento').style.display='none'; }
+
 async function salvaProfilo() { 
     await db.collection("utenti").doc(auth.currentUser.uid).update({ 
         nome: document.getElementById('p-nome').value, 
@@ -224,4 +243,16 @@ function richiediCollegamento() {
     if(!mId) return alert("Inserisci ID");
     db.collection("utenti").doc(auth.currentUser.uid).update({ maestroId: mId, maestroStato: "pending" });
     alert("Richiesta inviata al Maestro!");
+}
+
+// LOGICA ADMIN
+function caricaAdminPanel() {
+    db.collection("utenti").onSnapshot(snap => {
+        let h = "<table><tr><th>Nome</th><th>Ruolo</th></tr>";
+        snap.forEach(doc => {
+            const d = doc.data();
+            h += `<tr><td>${d.nome} ${d.cognome || ''}</td><td>${d.ruolo}</td></tr>`;
+        });
+        document.getElementById('lista-utenti-admin').innerHTML = h + "</table>";
+    });
 }
