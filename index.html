@@ -3,28 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Golf Pro V10</title>
+    <title>Golf Pro V10 - GitHub Edition</title>
     <style>
         :root { --allievo-color: #1a472a; --maestro-color: #1a237e; --accent: #2e7d32; --bg: #f0f4f0; --red: #d32f2f; --orange: #f57c00; --wa: #25D366; }
         body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg); margin: 0; display: flex; justify-content: center; }
-        #app-container { width: 100%; max-width: 450px; background: white; min-height: 100vh; position: relative; padding-bottom: 40px; }
-        header { background: var(--allievo-color); color: white; padding: 20px; text-align: center; font-weight: bold; font-size: 1.3em; }
+        #app-container { width: 100%; max-width: 450px; background: white; min-height: 100vh; position: relative; padding-bottom: 40px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+        header { background: var(--allievo-color); color: white; padding: 20px; text-align: center; font-weight: bold; font-size: 1.3em; position: sticky; top: 0; z-index: 100; }
         .maestro-header { background: var(--maestro-color) !important; }
-        .screen { display: none; padding: 15px; box-sizing: border-box; }
+        .screen { display: none; padding: 15px; box-sizing: border-box; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .active { display: block; }
         input, select, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ddd; margin-bottom: 10px; font-size: 16px; box-sizing: border-box; }
-        .btn-main { width: 100%; padding: 16px; background: var(--allievo-color); color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; }
-        .card-menu { background: white; border: 2px solid #eee; border-radius: 20px; padding: 20px; cursor: pointer; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; }
+        .btn-main { width: 100%; padding: 16px; background: var(--allievo-color); color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; margin-top: 5px; }
+        .card-menu { background: white; border: 2px solid #eee; border-radius: 20px; padding: 20px; cursor: pointer; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; transition: 0.2s; }
+        .card-menu:active { transform: scale(0.98); background: #f9f9f9; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
         th { text-align: left; color: #999; padding: 10px; border-bottom: 2px solid #eee; }
         td { padding: 12px 10px; border-bottom: 1px solid #eee; }
-        #modal-inserimento, #modal-allievo-dettaglio { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; display: none; justify-content: center; align-items: center; }
+        #modal-inserimento, #modal-allievo-dettaglio { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; display: none; justify-content: center; align-items: center; }
         .modal-content { background: white; width: 92%; max-height: 90vh; overflow-y: auto; padding: 20px; border-radius: 25px; }
         .msg-card { background: white; border-left: 5px solid var(--maestro-color); padding: 15px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .allievo-item { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        .club-stats-card { background: #e8f5e9; padding: 10px; border-radius: 10px; margin-bottom: 10px; font-size: 0.9em; }
-        .hole-card { background: #f9f9f9; border-radius: 12px; padding: 12px; margin-bottom: 10px; border: 1px solid #eee; }
-        .score-info { background: var(--allievo-color); color: white; padding: 15px; border-radius: 15px; text-align: center; margin-bottom: 20px; }
+        .club-stats-card { background: #e8f5e9; padding: 12px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #c8e6c9; }
+        .hole-card { background: #f9f9f9; border-radius: 15px; padding: 15px; margin-bottom: 12px; border: 1px solid #eee; }
+        .score-info { background: var(--allievo-color); color: white; padding: 15px; border-radius: 15px; text-align: center; margin-bottom: 20px; display: flex; justify-content: space-around; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .stat-grid label { font-size: 11px; color: #666; display: block; margin-bottom: 4px; }
     </style>
 </head>
 <body>
@@ -32,45 +35,45 @@
         <header id="app-header">⛳ GOLF PRO V10</header>
         
         <section id="auth-screen" class="screen active">
-            <h2 style="text-align:center;">Accedi</h2>
+            <h2 style="text-align:center;">Bentornato</h2>
             <input type="email" id="auth-email" placeholder="Email">
             <input type="password" id="auth-password" placeholder="Password">
             <button onclick="gestisciAuth()" class="btn-main">ENTRA</button>
             <p onclick="recuperaPassword()" style="text-align:center; color:var(--red); cursor:pointer; margin-top:15px;">Password dimenticata?</p>
-            <p onclick="vaiA('register-screen')" style="text-align:center; color:var(--accent); cursor:pointer; margin-top:20px;">Crea Account</p>
+            <p onclick="vaiA('register-screen')" style="text-align:center; color:var(--accent); cursor:pointer; margin-top:20px;">Crea Nuovo Account</p>
         </section>
 
         <section id="register-screen" class="screen">
-            <h3>📝 Nuovo Profilo</h3>
+            <h3>📝 Registrazione</h3>
             <input type="text" id="reg-nome" placeholder="Nome">
             <input type="text" id="reg-cognome" placeholder="Cognome">
             <input type="email" id="reg-email" placeholder="Email">
             <input type="password" id="reg-password" placeholder="Password">
-            <button onclick="registraUtente()" class="btn-main">REGISTRATI</button>
+            <button onclick="registraUtente()" class="btn-main">CREA PROFILO</button>
             <button onclick="vaiA('auth-screen')" style="width:100%; background:none; border:none; margin-top:10px;">Indietro</button>
         </section>
 
         <section id="menu-screen" class="screen">
             <div style="display:flex; justify-content:space-between; margin-bottom:20px; align-items:center;">
-                <div>Ciao, <b id="user-display">...</b><br><small id="my-id-display" style="font-size:9px; color:orange;"></small></div>
-                <button onclick="logout()" style="color:red; border:1px solid red; background:none; padding:5px; border-radius:8px;">Esci</button>
+                <div>🏌️ <b id="user-display">...</b><br><small id="my-id-display" style="font-size:9px; color:var(--orange);"></small></div>
+                <button onclick="logout()" style="color:red; border:1px solid red; background:none; padding:6px 12px; border-radius:8px; font-weight:bold;">ESCI</button>
             </div>
             <div id="wrapper-maestro" style="display:none;">
                 <div class="card-menu" style="border: 2px solid var(--maestro-color);" onclick="vaiA('maestro-screen')">
-                    <span>🎓</span><span style="color:var(--maestro-color); font-weight:bold;">AREA MAESTRO</span>
+                    <span>🎓</span><span style="color:var(--maestro-color); font-weight:bold;">AREA MAESTRO / COACH</span>
                 </div>
             </div>
             <div class="card-menu" style="background: var(--allievo-color); color: white;" onclick="vaiA('campo-screen')">
                 <span>⛳</span><span>SCORE IN CAMPO</span>
             </div>
             <div class="card-menu" onclick="vaiA('toptracer-screen')">
-                <span>🎯</span><span>PRATICA & STATS</span>
+                <span>🎯</span><span>PRATICA & SACCA</span>
             </div>
             <div class="card-menu" onclick="vaiA('esercizi-screen')">
-                <span>📁</span><span>LOCKER & COACH</span>
+                <span>📁</span><span>LOCKER & FEEDBACK</span>
             </div>
             <div class="card-menu" onclick="vaiA('profile-screen')">
-                <span>👤</span><span>PROFILO</span>
+                <span>👤</span><span>PROFILO & HCP</span>
             </div>
         </section>
 
@@ -78,82 +81,114 @@
             <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
             <h3>Segnapunti Live</h3>
             <select id="select-campo" onchange="inizializzaGiro()">
-                <option value="">-- Seleziona il Campo --</option>
-                <option value="Ducato">Il Ducato</option><option value="Vigatto">Vigatto</option>
-                <option value="Salsomaggiore">Salsomaggiore</option><option value="Canossa">Canossa</option>
+                <option value="">-- Scegli il percorso --</option>
+                <option value="Ducato">Il Ducato (Par 72)</option>
+                <option value="Vigatto">Vigatto (Par 54)</option>
+                <option value="Salsomaggiore">Salsomaggiore (Par 72)</option>
+                <option value="Canossa">Canossa (Par 72)</option>
             </select>
             <div id="scorecard-area" style="display:none;">
-                <div class="score-info">Lordo: <b id="live-score">0</b> | Netto: <b id="net-score">0</b><br><small id="hcp-info"></small></div>
+                <div class="score-info">
+                    <div>Lordo: <b id="live-score">0</b></div>
+                    <div>Netto: <b id="net-score">0</b></div>
+                    <div>Putt: <b id="total-putts">0</b></div>
+                </div>
+                <div id="hcp-info" style="text-align:center; font-size:11px; margin-bottom:10px; color:#666;"></div>
                 <div id="holes-container"></div>
             </div>
         </section>
 
         <section id="toptracer-screen" class="screen">
             <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
-            <h3>🎯 Stats Bastoni</h3>
+            <h3>🎯 Analisi Bastoni</h3>
             <div id="allievo-club-stats"></div>
-            <button onclick="apriModal()" class="btn-main" style="margin:10px 0;">+ REGISTRA COLPO</button>
-            <table><thead><tr><th>Club</th><th>Volo</th><th>Tot</th><th>Disp</th></tr></thead><tbody id="body-allievo"></tbody></table>
+            <button onclick="apriModal()" class="btn-main" style="margin:15px 0; background:var(--accent);">+ REGISTRA COLPO</button>
+            <div style="overflow-x:auto;">
+                <table><thead><tr><th>Club</th><th>Volo</th><th>Totale</th><th>Disp</th></tr></thead><tbody id="body-allievo"></tbody></table>
+            </div>
         </section>
 
         <section id="profile-screen" class="screen">
             <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
-            <h3>👤 Profilo</h3>
+            <h3>👤 Gestione Profilo</h3>
             <label>Nome</label><input type="text" id="p-nome">
             <label>Cognome</label><input type="text" id="p-cognome">
             <label>Username</label><input type="text" id="p-user">
             <label>HCP Esatto</label><input type="number" step="0.1" id="p-hcp">
-            <label>Telefono (per WhatsApp)</label><input type="tel" id="p-tel" placeholder="393471234567">
+            <label>Cellulare</label><input type="tel" id="p-tel" placeholder="39...">
             
-            <div style="background:#fff3e0; padding:15px; border-radius:15px; margin-top:10px;">
-                <label>ID Maestro</label><input type="text" id="p-maestro-id">
-                <button onclick="richiediCollegamento()" class="btn-main" style="background:var(--orange); font-size:12px;">COLLEGA MAESTRO</button>
+            <div style="background:#fff3e0; padding:15px; border-radius:15px; margin-top:15px; border: 1px solid #ffe0b2;">
+                <label>ID Maestro (Chiedilo al tuo Pro)</label>
+                <input type="text" id="p-maestro-id" placeholder="Incolla ID">
+                <button onclick="richiediCollegamento()" class="btn-main" style="background:var(--orange); font-size:12px;">INVIA RICHIESTA COLLEGAMENTO</button>
             </div>
-            <button onclick="salvaProfilo()" class="btn-main" style="background:var(--accent); margin-top: 15px;">SALVA</button>
+            <button onclick="salvaProfilo()" class="btn-main" style="background:var(--accent); margin-top: 20px;">SALVA DATI</button>
         </section>
 
         <section id="maestro-screen" class="screen">
             <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
-            <h3>🎓 Dashboard Maestro</h3>
+            <h3>🎓 Area Coach</h3>
             <div id="lista-richieste"></div>
-            <hr>
-            <h4>Allievi</h4>
+            <hr style="border:1px solid #eee; margin:20px 0;">
+            <h4>I Miei Allievi</h4>
             <div id="lista-allievi"></div>
         </section>
+
+        <div id="modal-inserimento">
+            <div class="modal-content">
+                <h3>🎯 Registra Colpo</h3>
+                <label>Seleziona Bastone</label>
+                <select id="m-club">
+                    <optgroup label="Legni">
+                        <option value="DRIVER">Driver</option>
+                        <option value="LEGNO 3">Legno 3</option>
+                        <option value="LEGNO 5">Legno 5</option>
+                        <option value="IBRIDO">Ibrido</option>
+                    </optgroup>
+                    <optgroup label="Ferri">
+                        <option value="FERRO 4">Ferro 4</option>
+                        <option value="FERRO 5">Ferro 5</option>
+                        <option value="FERRO 6">Ferro 6</option>
+                        <option value="FERRO 7" selected>Ferro 7</option>
+                        <option value="FERRO 8">Ferro 8</option>
+                        <option value="FERRO 9">Ferro 9</option>
+                    </optgroup>
+                    <optgroup label="Wedges">
+                        <option value="PW">PW</option>
+                        <option value="GW">GW (50-52°)</option>
+                        <option value="SW">SW (54-56°)</option>
+                        <option value="LW">LW (58-60°)</option>
+                    </optgroup>
+                </select>
+                <input type="number" id="m-carry" placeholder="Distanza di Volo (m)">
+                <input type="number" id="m-total" placeholder="Distanza Totale (m)">
+                <input type="number" id="m-disp-val" placeholder="Scarto laterale (m)">
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <button onclick="salvaColpo('Sinistra')" style="flex:1; background:var(--red);" class="btn-main">SX</button>
+                    <button onclick="salvaColpo('Centro')" style="flex:1; background:var(--accent);" class="btn-main">OK</button>
+                    <button onclick="salvaColpo('Destra')" style="flex:1; background:var(--maestro-color);" class="btn-main">DX</button>
+                </div>
+                <button onclick="chiudiModal()" style="width:100%; background:none; border:none; margin-top:15px; color:#666;">ANNULLA</button>
+            </div>
+        </div>
 
         <div id="modal-allievo-dettaglio">
             <div class="modal-content">
                 <h3 id="nome-allievo-modal">...</h3>
-                <button id="btn-whatsapp" class="btn-main" style="background:var(--wa); margin-bottom:15px;">💬 WHATSAPP (VIDEO/CHAT)</button>
+                <button id="btn-whatsapp" class="btn-main" style="background:var(--wa);">💬 CONTATTA SU WHATSAPP</button>
                 <hr>
                 <div id="maestro-club-stats-view"></div>
-                <table><thead><tr><th>Club</th><th>Volo</th><th>Tot</th></tr></thead><tbody id="body-maestro-view"></tbody></table>
                 <hr>
-                <textarea id="coach-msg" rows="3" placeholder="Nota per il Locker..."></textarea>
+                <textarea id="coach-msg" rows="3" placeholder="Scrivi un feedback tecnico..."></textarea>
                 <input type="text" id="coach-file" placeholder="Link Video (YouTube/Drive)">
-                <button class="btn-main" onclick="inviaContenuto()" style="background:var(--maestro-color);">SALVA NEL LOCKER</button>
-                <button onclick="document.getElementById('modal-allievo-dettaglio').style.display='none'" style="width:100%; border:none; background:none; margin-top:10px;">CHIUDI</button>
-            </div>
-        </div>
-
-        <div id="modal-inserimento">
-            <div class="modal-content">
-                <h3>🎯 Colpo</h3>
-                <select id="m-club"><option value="FERRO 7">Ferro 7</option><option value="DRIVER">Driver</option></select>
-                <input type="number" id="m-carry" placeholder="Volo (m)">
-                <input type="number" id="m-total" placeholder="Totale (m)">
-                <input type="number" id="m-disp-val" placeholder="Dispersione (m)">
-                <div style="display:flex; gap:5px;">
-                    <button onclick="salvaColpo('Sinistra')" style="background:red;" class="btn-main">S</button>
-                    <button onclick="salvaColpo('Centro')" style="background:green;" class="btn-main">OK</button>
-                    <button onclick="salvaColpo('Destra')" style="background:blue;" class="btn-main">D</button>
-                </div>
+                <button class="btn-main" onclick="inviaContenuto()" style="background:var(--maestro-color);">INVIA NEL LOCKER</button>
+                <button onclick="document.getElementById('modal-allievo-dettaglio').style.display='none'" style="width:100%; border:none; background:none; margin-top:20px;">CHIUDI</button>
             </div>
         </div>
 
         <section id="esercizi-screen" class="screen">
             <button onclick="vaiA('menu-screen')" style="border:none; background:none; font-weight:bold;">⬅ MENU</button>
-            <h3>📁 Locker</h3>
+            <h3>📁 Il Mio Locker</h3>
             <div id="locker-contenuto"></div>
         </section>
     </div>
