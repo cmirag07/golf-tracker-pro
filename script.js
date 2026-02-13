@@ -28,7 +28,6 @@ const mappaCampi = {
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         document.getElementById('my-id-display').innerText = `ID: ${user.uid}`;
-        // Lettura singola per risparmio crediti
         const doc = await db.collection("utenti").doc(user.uid).get();
         if (doc.exists) {
             const d = doc.data();
@@ -59,7 +58,6 @@ auth.onAuthStateChanged(async (user) => {
     } else { vaiA('auth-screen'); }
 });
 
-// FUNZIONE OTTIMIZZATA: LIMITE 80 COLPI
 function aggiornaTabellaEStats(uid, tid, sid) {
     db.collection("colpi")
       .where("userId", "==", uid)
@@ -93,7 +91,7 @@ function aggiornaTabellaEStats(uid, tid, sid) {
     });
 }
 
-// MODIFICA 1: LOCKER CON FILTRO 7 GIORNI
+// MODIFICA LOCKER: VISUALIZZA SOLO ULTIMI 7 GIORNI
 function caricaLocker(uid) {
     const unaSettimanaFa = new Date();
     unaSettimanaFa.setDate(unaSettimanaFa.getDate() - 7);
@@ -117,10 +115,11 @@ function caricaLocker(uid) {
         document.getElementById('locker-contenuto').innerHTML = h || "<p style='text-align:center;'>Non ci sono feedback negli ultimi 7 giorni.</p>"; 
     }).catch(err => {
         console.error("Errore Locker:", err);
+        // NOTA: Se la bacheca è vuota, controlla la console browser (F12) per il link dell'indice!
     });
 }
 
-// MODIFICA 2: ALIAS "PIOVANO" PER COLLEGAMENTO
+// MODIFICA ALIAS PIOVANO
 function richiediCollegamento() {
     let mId = document.getElementById('p-maestro-id').value.trim();
     if(!mId) return alert("Inserisci ID");
@@ -153,8 +152,10 @@ function vaiA(id) {
     if(id === 'admin-screen') caricaAdminPanel();
 }
 
+// LOGICA MAESTRO: FIX NOTIFICHE E LISTA
 function caricaDashboardMaestro(mId) {
-    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").get().then(snap => {
+    // Carica allievi confermati
+    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").onSnapshot(snap => {
         let h = ""; 
         snap.forEach(doc => { 
             const d = doc.data(); 
@@ -163,8 +164,12 @@ function caricaDashboardMaestro(mId) {
         document.getElementById('lista-allievi').innerHTML = h || "<p>Nessun allievo collegato.</p>";
     });
     
+    // Carica allievi in attesa (Notifiche)
     db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "pending").onSnapshot(snap => {
-        let h = ""; snap.forEach(doc => { h += `<div class="allievo-item"><span>${doc.data().nome}</span><button onclick="confermaAllievo('${doc.id}')" style="background:var(--accent); color:white; border:none; padding:5px 10px; border-radius:5px;">Accetta</button></div>`; });
+        let h = ""; 
+        snap.forEach(doc => { 
+            h += `<div class="allievo-item" style="border-left:5px solid var(--orange);"><span>${doc.data().nome}</span><button onclick="confermaAllievo('${doc.id}')" style="background:var(--accent); color:white; border:none; padding:8px 15px; border-radius:8px;">ACCETTA</button></div>`; 
+        });
         document.getElementById('lista-richieste').innerHTML = h;
     });
 }
@@ -217,17 +222,24 @@ function apriDettaglioMaestro(id, nome, tel) {
     aggiornaTabellaEStats(id, 'body-maestro-view', 'maestro-club-stats-view'); 
 }
 async function inviaContenuto() {
+    const msg = document.getElementById('coach-msg').value;
+    if(!msg) return alert("Scrivi un messaggio!");
     await db.collection("locker").add({
         allievoId: idAllievoSelezionato,
         maestroId: auth.currentUser.uid,
-        messaggio: document.getElementById('coach-msg').value,
+        messaggio: msg,
         link: document.getElementById('coach-file').value,
         data: firebase.firestore.FieldValue.serverTimestamp()
     });
     alert("Feedback inviato!");
+    document.getElementById('coach-msg').value = "";
+    document.getElementById('coach-file').value = "";
     document.getElementById('modal-allievo-dettaglio').style.display='none';
 }
-async function confermaAllievo(uid) { await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); }
+async function confermaAllievo(uid) { 
+    await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); 
+    alert("Allievo confermato!");
+}
 function apriModal() { document.getElementById('modal-inserimento').style.display='flex'; }
 function chiudiModal() { document.getElementById('modal-inserimento').style.display='none'; }
 function inizializzaGiro() {
