@@ -12,7 +12,6 @@ if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-let idAllievoSelezionato = null;
 let hcpUtente = 54;
 let mioRuolo = "allievo";
 let datiGiro = [];
@@ -25,6 +24,7 @@ const mappaCampi = {
     "Canossa": { par: [4, 5, 3, 4, 4, 3, 4, 4, 5, 4, 4, 4, 3, 4, 4, 5, 5, 3], index: [10, 12, 14, 4, 2, 8, 6, 16, 18, 13, 1, 5, 9, 15, 7, 17, 3, 11], cr: 72.0, slope: 133, parTot: 72 }
 };
 
+// --- GESTIONE ACCESSO ---
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         document.getElementById('my-id-display').innerText = `ID: ${user.uid}`;
@@ -33,17 +33,13 @@ auth.onAuthStateChanged(async (user) => {
             const d = doc.data();
             mioRuolo = d.ruolo || "allievo";
             hcpUtente = parseFloat(d.hcp) || 54;
-            document.getElementById('user-display').innerText = d.username || d.nome;
+            document.getElementById('user-display').innerText = d.nome || "Utente";
             document.getElementById('p-nome').value = d.nome || '';
             document.getElementById('p-hcp').value = hcpUtente;
             document.getElementById('p-maestro-id').value = d.maestroId || '';
         }
 
-        if (user.email === ADMIN_EMAIL) {
-            document.getElementById('wrapper-admin').style.display = 'block';
-            caricaAdminPanel();
-        }
-
+        if (user.email === ADMIN_EMAIL) document.getElementById('wrapper-admin').style.display = 'block';
         if (mioRuolo === "maestro" || user.email === ADMIN_EMAIL) {
             document.getElementById('wrapper-maestro').style.display = 'block';
             caricaDashboardMaestro(user.uid);
@@ -52,7 +48,87 @@ auth.onAuthStateChanged(async (user) => {
     } else { vaiA('auth-screen'); }
 });
 
-// --- SCORE DIGITALE (COLPI EXTRA E INPUT) ---
+// --- STORICO COLPI (ULTIMI 80 + VOLO PALLA) ---
+function aggiornaTabellaEStats(uid, tid, sid) {
+    db.collection("colpi")
+      .where("userId", "==", uid)
+      .orderBy("data", "desc")
+      .limit(80) // Limite ultimi 80 colpi
+      .onSnapshot(snap => {
+        let colpi = [];
+        let raggruppamento = {};
+        
+        snap.forEach(doc => {
+            let d = doc.data();
+            colpi.push(d);
+            
+            // Pulizia dati per medie (toglie la 'm' se presente per calcolare i numeri)
+            let cVal = parseFloat(String(d.carry).replace('m', '')) || 0;
+            let tVal = parseFloat(String(d.total).replace('m', '')) || 0;
+
+            if(!raggruppamento[d.club]) raggruppamento[d.club] = { c: 0, t: 0, n: 0 };
+            raggruppamento[d.club].c += cVal;
+            raggruppamento[d.club].t += tVal;
+            raggruppamento[d.club].n += 1;
+        });
+
+        // Riempimento Tabella
+        const target = document.getElementById(tid);
+        if(target) target.innerHTML = colpi.map(c => `
+            <tr>
+                <td><b>${c.club}</b></td>
+                <td style="color:#27ae60; font-weight:bold;">${c.carry}${String(c.carry).includes('m')?'':'m'}</td>
+                <td>${c.total}${String(c.total).includes('m')?'':'m'}</td>
+                <td><small>${c.dispersione || 'Centro'}</small></td>
+            </tr>`).join('');
+
+        // Media Club
+        const statsTarget = document.getElementById(sid);
+        if(statsTarget) {
+            let h = "";
+            for(let club in raggruppamento) {
+                let s = raggruppamento[club];
+                h += `<div class="club-stats-card"><b>${club}</b>: Volo ${(s.c/s.n).toFixed(0)}m | Totale ${(s.t/s.n).toFixed(0)}m (${s.n} colpi)</div>`;
+            }
+            statsTarget.innerHTML = h || "<p>Nessun dato.</p>";
+        }
+    }, err => console.error("Errore Storico:", err));
+}
+
+// --- SALVATAGGIO COLPO ---
+async function salvaColpo(direzione) {
+    const carry = document.getElementById('m-carry').value;
+    const total = document.getElementById('m-total').value;
+    if(!carry || !total) return alert("Inserisci i dati!");
+    
+    await db.collection("colpi").add({
+        userId: auth.currentUser.uid,
+        club: document.getElementById('m-club').value,
+        carry: carry + "m",
+        total: total + "m",
+        dispersione: direzione === "Centro" ? "Centro" : `${document.getElementById('m-disp-val').value}m ${direzione}`,
+        data: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    document.getElementById('modal-inserimento').style.display = 'none';
+}
+
+// --- COLLEGAMENTO MAESTRO (ALIAS PIOVANO) ---
+async function richiediCollegamento() {
+    let input = document.getElementById('p-maestro-id').value.trim();
+    if(!input) return alert("Inserisci Nome Maestro o ID");
+    
+    const maestroRef = await db.collection("maestri").doc(input.toUpperCase()).get();
+    let idFinale = input;
+    if (maestroRef.exists) idFinale = maestroRef.data().maestroId;
+
+    await db.collection("utenti").doc(auth.currentUser.uid).update({ 
+        maestroId: idFinale, 
+        maestroStato: "pending" 
+    });
+    alert("Richiesta inviata a " + input.toUpperCase());
+}
+
+// --- SCORE DIGITALE (COLPI EXTRA) ---
 function inizializzaGiro() {
     const nome = document.getElementById('select-campo').value;
     const campo = mappaCampi[nome];
@@ -67,27 +143,19 @@ function inizializzaGiro() {
 
     campo.par.forEach((p, i) => {
         const idx = campo.index[i];
-        let colpiExtra = 0;
-        if (colpiGioco >= idx) colpiExtra++;
-        if (colpiGioco >= idx + 18) colpiExtra++;
-        if (colpiGioco >= idx + 36) colpiExtra++;
-
+        let colpiExtra = (colpiGioco >= idx ? 1 : 0) + (colpiGioco >= idx + 18 ? 1 : 0) + (colpiGioco >= idx + 36 ? 1 : 0);
         datiGiro.push({ buca: i+1, par: p, colpiExtra: colpiExtra, colpi: 0, putt: 0, pen: 0, fairway: "C" });
         
         container.innerHTML += `
-            <div class="hole-card" style="border-left: 5px solid var(--accent); margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 8px;">
+            <div class="hole-card">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <b>BUCA ${i+1}</b> 
-                    <small>Par ${p} | Idx ${idx} <b style="color:var(--accent);">(${colpiExtra} r.)</b></small>
-                    <input type="number" placeholder="Colpi" oninput="upScore(${i}, 'colpi', this.value)" style="width:70px; font-weight:bold; text-align:center;">
+                    <b>BUCA ${i+1}</b> <small>Par ${p} (Idx ${idx}) <b style="color:#e67e22;">+${colpiExtra}</b></small>
+                    <input type="number" placeholder="Colpi" oninput="upScore(${i}, 'colpi', this.value)" style="width:60px; text-align:center;">
                 </div>
                 <div style="display:flex; gap:5px; margin-top:8px;">
                     <input type="number" placeholder="Putt" oninput="upScore(${i}, 'putt', this.value)" style="flex:1;">
-                    <input type="number" placeholder="Pen" oninput="upScore(${i}, 'pen', this.value)" style="flex:1;">
                     <select onchange="upScore(${i}, 'fairway', this.value)" style="flex:1;">
-                        <option value="C">FW-C</option>
-                        <option value="SX">SX</option>
-                        <option value="DX">DX</option>
+                        <option value="C">FW-C</option><option value="SX">SX</option><option value="DX">DX</option>
                     </select>
                 </div>
             </div>`;
@@ -97,96 +165,31 @@ function inizializzaGiro() {
 function upScore(i, t, v) {
     if(t === 'fairway') datiGiro[i].fairway = v;
     else datiGiro[i][t] = parseInt(v) || 0;
-    
-    let lordo = 0, netto = 0, p = 0;
+    let l = 0, n = 0;
     datiGiro.forEach(b => { 
-        if(b.colpi > 0) { 
-            lordo += b.colpi; 
-            netto += (b.colpi - b.colpiExtra - b.par); 
-        } 
-        p += b.putt;
+        if(b.colpi > 0) { l += b.colpi; n += (b.colpi - b.colpiExtra - b.par); } 
     });
-    document.getElementById('live-score').innerText = lordo;
-    document.getElementById('net-score').innerText = (netto > 0 ? "+" + netto : netto);
-    if(document.getElementById('total-putts')) document.getElementById('total-putts').innerText = p;
+    document.getElementById('live-score').innerText = l;
+    document.getElementById('net-score').innerText = (n > 0 ? "+" + n : n);
 }
 
-// --- STORICO COLPI (LIMITE 80 E DATO VOLO) ---
-function aggiornaTabellaEStats(uid, tid, sid) {
-    db.collection("colpi")
-      .where("userId", "==", uid)
-      .orderBy("data", "desc")
-      .limit(80) // <--- Limite 80 colpi richiesto
-      .onSnapshot(snap => {
-        let colpi = [];
-        let raggruppamento = {};
-        snap.forEach(doc => {
-            let d = doc.data();
-            colpi.push(d);
-            if(!raggruppamento[d.club]) raggruppamento[d.club] = { c: 0, t: 0, n: 0 };
-            raggruppamento[d.club].c += parseFloat(d.carry || 0);
-            raggruppamento[d.club].t += parseFloat(d.total || 0);
-            raggruppamento[d.club].n += 1;
-        });
-
-        const target = document.getElementById(tid);
-        if(target) target.innerHTML = colpi.map(c => `
-            <tr>
-                <td><b>${c.club}</b></td>
-                <td style="color:var(--accent); font-weight:bold;">${c.carry}m</td>
-                <td>${c.total}m</td>
-                <td><small>${c.dispersione}</small></td>
-            </tr>`).join('');
-
-        const statsTarget = document.getElementById(sid);
-        if(statsTarget) {
-            let h = "";
-            for(let club in raggruppamento) {
-                let s = raggruppamento[club];
-                h += `<div class="club-stats-card"><b>${club}</b>: Volo ${(s.c/s.n).toFixed(0)}m | Totale ${(s.t/s.n).toFixed(0)}m (${s.n} colpi)</div>`;
-            }
-            statsTarget.innerHTML = h || "<p>Nessun dato.</p>";
-        }
-    });
-}
-
-// --- GESTIONE MAESTRI ---
-async function richiediCollegamento() {
-    let input = document.getElementById('p-maestro-id').value.trim();
-    if(!input) return alert("Inserisci Nome o ID");
-    const maestroRef = await db.collection("maestri").doc(input.toUpperCase()).get();
-    let idFinale = input;
-    if (maestroRef.exists) idFinale = maestroRef.data().maestroId;
-    db.collection("utenti").doc(auth.currentUser.uid).update({ maestroId: idFinale, maestroStato: "pending" });
-    alert("Richiesta inviata!");
-}
-
-// --- NAVIGAZIONE E SALVATAGGIO ---
+// --- NAVIGAZIONE ---
 function vaiA(id) { 
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); 
     document.getElementById(id).classList.add('active'); 
     if(id === 'toptracer-screen') aggiornaTabellaEStats(auth.currentUser.uid, 'body-allievo', 'allievo-club-stats');
+    if(id === 'esercizi-screen') caricaLocker(auth.currentUser.uid);
 }
 
-async function salvaColpo(direzione) {
-    const carry = document.getElementById('m-carry').value;
-    const total = document.getElementById('m-total').value;
-    if(!carry || !total) return alert("Dati mancanti!");
-    await db.collection("colpi").add({
-        userId: auth.currentUser.uid,
-        club: document.getElementById('m-club').value,
-        carry: carry,
-        total: total,
-        dispersione: direzione === "Centro" ? "Centro" : `${document.getElementById('m-disp-val').value}m ${direzione}`,
-        data: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    chiudiModal();
-}
-
+// --- LOGICA MAESTRO ---
 function caricaDashboardMaestro(mId) {
     db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").onSnapshot(snap => {
-        let h = ""; snap.forEach(doc => { const d = doc.data(); h += `<div class="allievo-item" onclick="apriDettaglioMaestro('${doc.id}', '${d.nome}')"><b>${d.nome}</b> (HCP ${d.hcp})</div>`; });
+        let h = ""; snap.forEach(doc => { h += `<div class="allievo-item" onclick="apriDettaglioMaestro('${doc.id}', '${doc.data().nome}')"><b>${doc.data().nome}</b> (HCP ${doc.data().hcp})</div>`; });
         document.getElementById('lista-allievi').innerHTML = h || "<p>Nessun allievo.</p>";
+    });
+    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "pending").onSnapshot(snap => {
+        let h = ""; snap.forEach(doc => { h += `<div class="allievo-item">${doc.data().nome} <button onclick="confermaAllievo('${doc.id}')">Accetta</button></div>`; });
+        document.getElementById('lista-richieste').innerHTML = h;
     });
 }
 
@@ -197,6 +200,7 @@ function apriDettaglioMaestro(id, nome) {
     aggiornaTabellaEStats(id, 'body-maestro-view', 'maestro-club-stats-view'); 
 }
 
+async function confermaAllievo(uid) { await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); }
 function logout() { auth.signOut().then(() => location.reload()); }
 function gestisciAuth() { auth.signInWithEmailAndPassword(document.getElementById('auth-email').value, document.getElementById('auth-password').value).catch(e => alert(e.message)); }
 function registraUtente() {
@@ -211,9 +215,13 @@ async function salvaProfilo() {
 }
 function apriModal() { document.getElementById('modal-inserimento').style.display='flex'; }
 function chiudiModal() { document.getElementById('modal-inserimento').style.display='none'; }
-function caricaAdminPanel() {
-    db.collection("utenti").onSnapshot(snap => {
-        let h = "<table>"; snap.forEach(doc => { h += `<tr><td>${doc.data().nome}</td><td>${doc.data().ruolo}</td></tr>`; });
-        document.getElementById('lista-utenti-admin').innerHTML = h + "</table>";
+
+function caricaLocker(uid) {
+    db.collection("locker").where("allievoId", "==", uid).orderBy("data", "desc").onSnapshot(snap => {
+        let h = ""; snap.forEach(doc => { 
+            let d = doc.data(); 
+            h += `<div class="msg-card"><small>${d.data ? d.data.toDate().toLocaleDateString() : ''}</small><p>${d.messaggio}</p></div>`; 
+        }); 
+        document.getElementById('locker-contenuto').innerHTML = h || "<p>Nessun feedback.</p>"; 
     });
 }
