@@ -28,24 +28,27 @@ const mappaCampi = {
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         document.getElementById('my-id-display').innerText = `ID: ${user.uid}`;
-        const doc = await db.collection("utenti").doc(user.uid).get();
-        if (doc.exists) {
-            const d = doc.data();
-            mioRuolo = d.ruolo || "allievo";
-            hcpUtente = parseFloat(d.hcp) || 54;
-            document.getElementById('user-display').innerText = d.username || d.nome;
-            
-            document.getElementById('p-nome').value = d.nome || '';
-            document.getElementById('p-cognome').value = d.cognome || '';
-            document.getElementById('p-user').value = d.username || '';
-            document.getElementById('p-hcp').value = hcpUtente;
-            document.getElementById('p-tel').value = d.telefono || '';
-            document.getElementById('p-maestro-id').value = d.maestroId || '';
+        let doc = await db.collection("utenti").doc(user.uid).get();
+        if (!doc.exists) {
+            await db.collection("utenti").doc(user.uid).set({ nome: "Nuovo", ruolo: "allievo", hcp: 54, maestroId: "", maestroStato: "" });
+            doc = await db.collection("utenti").doc(user.uid).get();
         }
+        const d = doc.data();
+        mioRuolo = d.ruolo || "allievo";
+        hcpUtente = parseFloat(d.hcp) || 54;
+        
+        document.getElementById('user-display').innerText = d.username || d.nome;
+        document.getElementById('p-nome').value = d.nome || '';
+        document.getElementById('p-cognome').value = d.cognome || '';
+        document.getElementById('p-user').value = d.username || '';
+        document.getElementById('p-hcp').value = hcpUtente;
+        document.getElementById('p-tel').value = d.telefono || '';
+        document.getElementById('p-maestro-id').value = d.maestroId || '';
 
         if (user.email === ADMIN_EMAIL) {
             document.getElementById('wrapper-admin').style.display = 'block';
             document.getElementById('app-header').classList.add('admin-header');
+            caricaAdminPanel();
         }
 
         if (mioRuolo === "maestro" || user.email === ADMIN_EMAIL) {
@@ -54,31 +57,77 @@ auth.onAuthStateChanged(async (user) => {
             caricaDashboardMaestro(user.uid);
         }
 
+        caricaLocker(user.uid);
+        aggiornaTabellaEStats(user.uid, 'body-allievo', 'allievo-club-stats');
         vaiA('menu-screen');
     } else { vaiA('auth-screen'); }
 });
 
-// FUNZIONE COLPI (Mantiene limite 80 per sicurezza crediti)
+// --- LOGICA SCORE ORIGINALE ---
+function inizializzaGiro() {
+    const nome = document.getElementById('select-campo').value;
+    const campo = mappaCampi[nome];
+    if(!campo) return;
+    const colpiGioco = Math.round((hcpUtente * (campo.slope / 113)) + (campo.cr - campo.parTot));
+    document.getElementById('scorecard-area').style.display = 'block';
+    document.getElementById('hcp-info').innerText = `HCP Gioco: ${colpiGioco} (Esatto: ${hcpUtente})`;
+    const container = document.getElementById('holes-container');
+    container.innerHTML = ""; datiGiro = [];
+    campo.par.forEach((p, i) => {
+        const idx = campo.index[i];
+        let colpiExtra = 0;
+        if (colpiGioco >= idx) colpiExtra++;
+        if (colpiGioco >= idx + 18) colpiExtra++;
+        datiGiro.push({ buca: i+1, par: p, colpiExtra: colpiExtra, colpi: 0, putt: 0, pen: 0 });
+        container.innerHTML += `
+            <div class="hole-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div><b>BUCA ${i+1}</b> <br><small>Par ${p} | Idx ${idx}</small></div>
+                    <div style="color:var(--accent); font-weight:bold;">+${colpiExtra}</div>
+                    <div style="width: 35%"><input type="number" oninput="upScore(${i}, 'colpi', this.value)" placeholder="Score"></div>
+                </div>
+                <div class="stat-grid">
+                    <div><label>Putt</label><input type="number" oninput="upScore(${i}, 'putt', this.value)"></div>
+                    <div><label>Pen</label><input type="number" oninput="upScore(${i}, 'pen', this.value)"></div>
+                    <div><label>Fairway</label><select onchange="upScore(${i}, 'fairway', this.value)"><option value="C">C</option><option value="SX">SX</option><option value="DX">DX</option></select></div>
+                </div>
+            </div>`;
+    });
+}
+
+function upScore(i, t, v) {
+    if(t === 'fairway') datiGiro[i].fairway = v;
+    else datiGiro[i][t] = parseInt(v) || 0;
+    let l = 0, n = 0, p = 0;
+    datiGiro.forEach(b => { 
+        if(b.colpi > 0) { 
+            l += b.colpi; 
+            n += (b.colpi - b.par - b.colpiExtra); 
+        } 
+        p += b.putt; 
+    });
+    document.getElementById('live-score').innerText = l;
+    document.getElementById('net-score').innerText = (n > 0 ? "+" + n : n);
+    document.getElementById('total-putts').innerText = p;
+}
+
+// --- ANALISI COLPI (CON VOLO) ---
 function aggiornaTabellaEStats(uid, tid, sid) {
-    db.collection("colpi")
-      .where("userId", "==", uid)
-      .orderBy("data", "desc")
-      .limit(80) 
-      .onSnapshot(snap => { // Ripristinato onSnapshot per vedere i colpi appena salvati
+    db.collection("colpi").where("userId", "==", uid).onSnapshot(snap => {
         let colpi = [];
         let raggruppamento = {};
         snap.forEach(doc => {
             let d = doc.data();
+            d.ts = d.data ? d.data.toMillis() : 0;
             colpi.push(d);
             if(!raggruppamento[d.club]) raggruppamento[d.club] = { c: 0, t: 0, n: 0 };
             raggruppamento[d.club].c += parseFloat(d.carry || 0);
             raggruppamento[d.club].t += parseFloat(d.total || 0);
             raggruppamento[d.club].n += 1;
         });
-        
+        colpi.sort((a,b) => b.ts - a.ts);
         const target = document.getElementById(tid);
-        if(target) target.innerHTML = colpi.map(c => `<tr><td><b>${c.club}</b></td><td style="color:var(--accent); font-weight:bold;">${c.carry}m</td><td>${c.total}m</td><td>${c.dispersione}</td></tr>`).join('');
-        
+        if(target) target.innerHTML = colpi.slice(0, 15).map(c => `<tr><td><b>${c.club}</b></td><td style="color:var(--accent); font-weight:bold;">${c.carry}m</td><td>${c.total}m</td><td>${c.dispersione}</td></tr>`).join('');
         const statsTarget = document.getElementById(sid);
         if(statsTarget) {
             let h = "";
@@ -88,79 +137,6 @@ function aggiornaTabellaEStats(uid, tid, sid) {
             }
             statsTarget.innerHTML = h || "<p>Nessun dato registrato.</p>";
         }
-    });
-}
-
-// LOCKER: FILTRO 7 GIORNI
-function caricaLocker(uid) {
-    const unaSettimanaFa = new Date();
-    unaSettimanaFa.setDate(unaSettimanaFa.getDate() - 7);
-
-    db.collection("locker")
-      .where("allievoId", "==", uid)
-      .where("data", ">=", unaSettimanaFa)
-      .orderBy("data", "desc")
-      .onSnapshot(snap => {
-        let h = ""; 
-        snap.forEach(doc => { 
-            let d = doc.data(); 
-            let dataInvio = d.data ? d.data.toDate().toLocaleDateString() : "Oggi";
-            h += `<div class="msg-card">
-                    <small style="color:gray;">${dataInvio}</small>
-                    <p style="margin:10px 0;">${d.messaggio}</p>
-                    ${d.link ? `<a href="${d.link}" target="_blank" style="color:var(--maestro-color); font-weight:bold; text-decoration:none;">📺 VEDI VIDEO ANALISI</a>` : ''}
-                  </div>`; 
-        }); 
-        document.getElementById('locker-contenuto').innerHTML = h || "<p style='text-align:center;'>Nessun messaggio negli ultimi 7 giorni.</p>"; 
-    });
-}
-
-// ALIAS PIOVANO
-function richiediCollegamento() {
-    let mId = document.getElementById('p-maestro-id').value.trim();
-    if(!mId) return alert("Inserisci ID Maestro o codice speciale");
-
-    if(mId.toUpperCase() === "PIOVANO") {
-        mId = "oLcxhOVc6VXjmZsD7CkAjtW8Fqg2";
-    }
-
-    db.collection("utenti").doc(auth.currentUser.uid).update({ maestroId: mId, maestroStato: "pending" });
-    alert("Richiesta inviata!");
-}
-
-function caricaAdminPanel() {
-    db.collection("utenti").onSnapshot(snap => {
-        let h = "<table><tr><th>Nome</th><th>Ruolo</th></tr>";
-        snap.forEach(doc => {
-            const d = doc.data();
-            h += `<tr><td>${d.nome} ${d.cognome || ''}</td><td>${d.ruolo}</td></tr>`;
-        });
-        document.getElementById('lista-utenti-admin').innerHTML = h + "</table>";
-    });
-}
-
-function vaiA(id) { 
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); 
-    document.getElementById(id).classList.add('active'); 
-    window.scrollTo(0,0); 
-    if(id === 'toptracer-screen') aggiornaTabellaEStats(auth.currentUser.uid, 'body-allievo', 'allievo-club-stats');
-    if(id === 'esercizi-screen') caricaLocker(auth.currentUser.uid);
-    if(id === 'admin-screen') caricaAdminPanel();
-}
-
-function caricaDashboardMaestro(mId) {
-    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").onSnapshot(snap => {
-        let h = ""; 
-        snap.forEach(doc => { 
-            const d = doc.data(); 
-            h += `<div class="allievo-item" onclick="apriDettaglioMaestro('${doc.id}', '${d.nome}', '${d.telefono || ""}')"><span><b>${d.nome}</b> (HCP ${d.hcp})</span> <span style="color:var(--maestro-color);">VEDI ➔</span></div>`; 
-        });
-        document.getElementById('lista-allievi').innerHTML = h || "<p>Nessun allievo collegato.</p>";
-    });
-    
-    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "pending").onSnapshot(snap => {
-        let h = ""; snap.forEach(doc => { h += `<div class="allievo-item"><span>${doc.data().nome}</span><button onclick="confermaAllievo('${doc.id}')" style="background:var(--accent); color:white; border:none; padding:5px 10px; border-radius:5px;">Accetta</button></div>`; });
-        document.getElementById('lista-richieste').innerHTML = h;
     });
 }
 
@@ -180,26 +156,88 @@ async function salvaColpo(direzione) {
     chiudiModal();
 }
 
+// --- LOCKER (FILTRO 7 GIORNI) ---
+function caricaLocker(uid) {
+    const unaSettimanaFa = new Date();
+    unaSettimanaFa.setDate(unaSettimanaFa.getDate() - 7);
+
+    db.collection("locker")
+      .where("allievoId", "==", uid)
+      .where("data", ">=", unaSettimanaFa)
+      .orderBy("data", "desc")
+      .onSnapshot(snap => {
+        let h = ""; 
+        snap.forEach(doc => { 
+            let d = doc.data(); 
+            let dataInvio = d.data ? d.data.toDate().toLocaleDateString() : "Oggi";
+            h += `<div class="msg-card">
+                    <small style="color:gray;">${dataInvio}</small>
+                    <p style="margin:10px 0;">${d.messaggio}</p>
+                    ${d.link ? `<a href="${d.link}" target="_blank" style="color:var(--maestro-color); font-weight:bold; text-decoration:none;">📺 VEDI VIDEO ANALISI</a>` : ''}
+                  </div>`; 
+        }); 
+        document.getElementById('locker-contenuto').innerHTML = h || "<p style='text-align:center;'>Nessun feedback negli ultimi 7 giorni.</p>"; 
+    }, err => {
+        console.warn("Indice mancante? Clicca il link in console se presente.");
+    });
+}
+
+// --- FUNZIONE COLLEGAMENTO FIXATA ---
+function richiediCollegamento() {
+    let mId = document.getElementById('p-maestro-id').value.trim();
+    if(!mId) return alert("Inserisci ID");
+
+    // Fix Alias: Se l'utente scrive PIOVANO, salviamo l'ID reale nel database
+    if(mId.toUpperCase() === "PIOVANO") {
+        mId = "oLcxhOVc6VXjmZsD7CkAjtW8Fqg2";
+    }
+
+    db.collection("utenti").doc(auth.currentUser.uid).update({ 
+        maestroId: mId, 
+        maestroStato: "pending" 
+    }).then(() => {
+        alert("Richiesta inviata! Il Maestro dovrà accettarti nella sua area Coach.");
+    });
+}
+
+// --- DASHBOARD MAESTRO FIXATA ---
+function caricaDashboardMaestro(mId) {
+    // 1. Carica le richieste PENDING
+    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "pending").onSnapshot(snap => {
+        let h = ""; 
+        snap.forEach(doc => { 
+            h += `<div class="allievo-item"><span>${doc.data().nome}</span><button onclick="confermaAllievo('${doc.id}')" style="background:var(--accent); color:white; border:none; padding:5px 10px; border-radius:5px;">Accetta</button></div>`; 
+        });
+        document.getElementById('lista-richieste').innerHTML = h;
+    });
+
+    // 2. Carica gli allievi CONFERMATI
+    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").onSnapshot(snap => {
+        let h = ""; 
+        snap.forEach(doc => { 
+            const d = doc.data(); 
+            h += `<div class="allievo-item" onclick="apriDettaglioMaestro('${doc.id}', '${d.nome}', '${d.telefono || ""}')"><span><b>${d.nome}</b> (HCP ${d.hcp})</span> <span style="color:var(--maestro-color);">VEDI ➔</span></div>`; 
+        });
+        document.getElementById('lista-allievi').innerHTML = h || "<p>Nessun allievo confermato.</p>";
+    });
+}
+
+async function confermaAllievo(uid) { 
+    await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); 
+}
+
+// --- ALTRE FUNZIONI UTILI ---
+function vaiA(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo(0,0); }
 function logout() { auth.signOut().then(() => location.reload()); }
-function gestisciAuth() { auth.signInWithEmailAndPassword(document.getElementById('auth-email').value, document.getElementById('auth-password').value).catch(e => alert("Errore accesso: " + e.message)); }
+function gestisciAuth() { auth.signInWithEmailAndPassword(document.getElementById('auth-email').value, document.getElementById('auth-password').value).catch(e => alert("Errore: " + e.message)); }
 function registraUtente() {
     const e = document.getElementById('reg-email').value, p = document.getElementById('reg-password').value;
     auth.createUserWithEmailAndPassword(e, p).then(res => {
-        return db.collection("utenti").doc(res.user.uid).set({ 
-            nome: document.getElementById('reg-nome').value, 
-            cognome: document.getElementById('reg-cognome').value,
-            ruolo: "allievo", hcp: 54, maestroId: "", maestroStato: "" 
-        });
+        return db.collection("utenti").doc(res.user.uid).set({ nome: document.getElementById('reg-nome').value, cognome: document.getElementById('reg-cognome').value, ruolo: "allievo", hcp: 54, maestroId: "", maestroStato: "" });
     }).catch(err => alert(err.message));
 }
 async function salvaProfilo() { 
-    await db.collection("utenti").doc(auth.currentUser.uid).update({ 
-        nome: document.getElementById('p-nome').value, 
-        cognome: document.getElementById('p-cognome').value,
-        hcp: parseFloat(document.getElementById('p-hcp').value) || 54, 
-        username: document.getElementById('p-user').value,
-        telefono: document.getElementById('p-tel').value
-    });
+    await db.collection("utenti").doc(auth.currentUser.uid).update({ nome: document.getElementById('p-nome').value, cognome: document.getElementById('p-cognome').value, hcp: parseFloat(document.getElementById('p-hcp').value) || 54, username: document.getElementById('p-user').value, telefono: document.getElementById('p-tel').value });
     alert("Profilo Salvato!");
 }
 function apriDettaglioMaestro(id, nome, tel) { 
@@ -211,41 +249,16 @@ function apriDettaglioMaestro(id, nome, tel) {
     aggiornaTabellaEStats(id, 'body-maestro-view', 'maestro-club-stats-view'); 
 }
 async function inviaContenuto() {
-    await db.collection("locker").add({
-        allievoId: idAllievoSelezionato,
-        maestroId: auth.currentUser.uid,
-        messaggio: document.getElementById('coach-msg').value,
-        link: document.getElementById('coach-file').value,
-        data: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    await db.collection("locker").add({ allievoId: idAllievoSelezionato, maestroId: auth.currentUser.uid, messaggio: document.getElementById('coach-msg').value, link: document.getElementById('coach-file').value, data: firebase.firestore.FieldValue.serverTimestamp() });
     alert("Feedback inviato!");
     document.getElementById('modal-allievo-dettaglio').style.display='none';
 }
-async function confermaAllievo(uid) { await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); }
 function apriModal() { document.getElementById('modal-inserimento').style.display='flex'; }
 function chiudiModal() { document.getElementById('modal-inserimento').style.display='none'; }
-
-// LOGICA SCORECARD ORIGINALE (RIPRISTINATA)
-function inizializzaGiro() {
-    const nome = document.getElementById('select-campo').value;
-    const campo = mappaCampi[nome];
-    if(!campo) return;
-    const colpiGioco = Math.round((hcpUtente * (campo.slope / 113)) + (campo.cr - campo.parTot));
-    document.getElementById('scorecard-area').style.display = 'block';
-    document.getElementById('hcp-info').innerText = `HCP Gioco: ${colpiGioco}`;
-    const container = document.getElementById('holes-container');
-    container.innerHTML = ""; datiGiro = [];
-    campo.par.forEach((p, i) => {
-        const idx = campo.index[i];
-        let colpiExtra = (colpiGioco >= idx ? 1 : 0) + (colpiGioco >= idx + 18 ? 1 : 0);
-        datiGiro.push({ buca: i+1, par: p, colpiExtra: colpiExtra, colpi: 0 });
-        container.innerHTML += `<div class="hole-card"><b>Buca ${i+1}</b> Par ${p} (Idx ${idx}) <input type="number" oninput="upScore(${i}, 'colpi', this.value)" style="width:60px; float:right;"></div>`;
+function caricaAdminPanel() {
+    db.collection("utenti").onSnapshot(snap => {
+        let h = "<table><tr><th>Nome</th><th>Ruolo</th></tr>";
+        snap.forEach(doc => { const d = doc.data(); h += `<tr><td>${d.nome} ${d.cognome || ''}</td><td>${d.ruolo}</td></tr>`; });
+        document.getElementById('lista-utenti-admin').innerHTML = h + "</table>";
     });
-}
-function upScore(i, t, v) {
-    datiGiro[i][t] = parseInt(v) || 0;
-    let l = 0, n = 0;
-    datiGiro.forEach(b => { if(b.colpi > 0) { l += b.colpi; n += (b.colpi - b.par - b.colpiExtra); } });
-    document.getElementById('live-score').innerText = l;
-    document.getElementById('net-score').innerText = (n > 0 ? "+" + n : n);
 }
