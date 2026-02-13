@@ -44,44 +44,54 @@ auth.onAuthStateChanged(async (user) => {
 
         if (user.email === ADMIN_EMAIL) {
             document.getElementById('wrapper-admin').style.display = 'block';
-            document.getElementById('app-header').classList.add('admin-header');
             caricaAdminPanel();
         }
 
         if (mioRuolo === "maestro" || user.email === ADMIN_EMAIL) {
             document.getElementById('wrapper-maestro').style.display = 'block';
-            if (mioRuolo === "maestro") document.getElementById('app-header').classList.add('maestro-header');
             caricaDashboardMaestro(user.uid);
         }
         vaiA('menu-screen');
     } else { vaiA('auth-screen'); }
 });
 
-// --- GESTIONE SCORE DIGITALE DETTAGLIATO ---
+// --- SCORE DIGITALE (COLPI EXTRA E DETTAGLI) ---
 function inizializzaGiro() {
     const nome = document.getElementById('select-campo').value;
     const campo = mappaCampi[nome];
     if(!campo) return;
+
+    // Calcolo Colpi di Gioco
     const colpiGioco = Math.round((hcpUtente * (campo.slope / 113)) + (campo.cr - campo.parTot));
+    
     document.getElementById('scorecard-area').style.display = 'block';
-    document.getElementById('hcp-info').innerText = `HCP Gioco: ${colpiGioco} (Esatto: ${hcpUtente})`;
+    document.getElementById('hcp-info').innerText = `HCP Gioco: ${colpiGioco} (Base: ${hcpUtente})`;
+    
     const container = document.getElementById('holes-container');
     container.innerHTML = ""; datiGiro = [];
+
     campo.par.forEach((p, i) => {
         const idx = campo.index[i];
-        let colpiExtra = (colpiGioco >= idx ? 1 : 0) + (colpiGioco >= idx + 18 ? 1 : 0);
+        // Calcolo colpi extra per questa buca
+        let colpiExtra = 0;
+        if (colpiGioco >= idx) colpiExtra++;
+        if (colpiGioco >= idx + 18) colpiExtra++;
+        if (colpiGioco >= idx + 36) colpiExtra++;
+
         datiGiro.push({ buca: i+1, par: p, colpiExtra: colpiExtra, colpi: 0, putt: 0, pen: 0, fairway: "C" });
+        
         container.innerHTML += `
             <div class="hole-card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                    <b>BUCA ${i+1}</b> <span style="font-size:0.8em; color:#666;">Par ${p} | Idx ${idx} (Colpi Extra: ${colpiExtra})</span>
-                    <input type="number" placeholder="Tot" oninput="upScore(${i}, 'colpi', this.value)" style="width:60px; font-weight:bold;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <b>BUCA ${i+1}</b> 
+                    <span style="font-size:0.8em; color:#666;">Par ${p} | Idx ${idx} <b style="color:var(--accent);">(${colpiExtra} rec.)</b></span>
+                    <input type="number" placeholder="Colpi" oninput="upScore(${i}, 'colpi', this.value)" style="width:60px; border:2px solid var(--allievo-color); border-radius:5px; text-align:center;">
                 </div>
                 <div style="display:flex; gap:5px;">
-                    <input type="number" placeholder="Putt" oninput="upScore(${i}, 'putt', this.value)" style="flex:1;">
-                    <input type="number" placeholder="Pen" oninput="upScore(${i}, 'pen', this.value)" style="flex:1;">
-                    <select onchange="upScore(${i}, 'fairway', this.value)" style="flex:1;">
-                        <option value="C">FW-C</option><option value="SX">FW-SX</option><option value="DX">FW-DX</option>
+                    <input type="number" placeholder="Putt" oninput="upScore(${i}, 'putt', this.value)" style="flex:1; font-size:0.9em;">
+                    <input type="number" placeholder="Pen" oninput="upScore(${i}, 'pen', this.value)" style="flex:1; font-size:0.9em;">
+                    <select onchange="upScore(${i}, 'fairway', this.value)" style="flex:1.5; font-size:0.9em;">
+                        <option value="C">Fairway</option><option value="SX">SX</option><option value="DX">DX</option>
                     </select>
                 </div>
             </div>`;
@@ -91,94 +101,83 @@ function inizializzaGiro() {
 function upScore(i, t, v) {
     if(t === 'fairway') datiGiro[i].fairway = v;
     else datiGiro[i][t] = parseInt(v) || 0;
-    let l = 0, n = 0, p = 0;
+
+    let lordo = 0, netto = 0, totPutt = 0;
     datiGiro.forEach(b => { 
-        if(b.colpi > 0) { l += b.colpi; n += (b.colpi - b.par - b.colpiExtra); } 
-        p += b.putt;
+        if(b.colpi > 0) { 
+            lordo += b.colpi; 
+            // Calcolo punteggio netto (Stableford semplificato o colpi netti)
+            netto += (b.colpi - b.colpiExtra - b.par); 
+        } 
+        totPutt += b.putt;
     });
-    document.getElementById('live-score').innerText = l;
-    document.getElementById('net-score').innerText = (n > 0 ? "+" + n : n);
-    const puttDisp = document.getElementById('total-putts');
-    if(puttDisp) puttDisp.innerText = p;
+
+    document.getElementById('live-score').innerText = lordo;
+    document.getElementById('net-score').innerText = (netto > 0 ? "+" + netto : netto);
+    const pDisp = document.getElementById('total-putts');
+    if(pDisp) pDisp.innerText = totPutt;
 }
 
-// --- STORICO COLPI AGGIORNATO (CON VOLO) ---
+// --- STORICO COLPI (DATO VOLO/CARRY) ---
 function aggiornaTabellaEStats(uid, tid, sid) {
     db.collection("colpi").where("userId", "==", uid).orderBy("data", "desc").limit(50).onSnapshot(snap => {
         let colpi = [];
-        let raggruppamento = {};
+        let medie = {};
         snap.forEach(doc => {
             let d = doc.data();
             colpi.push(d);
-            if(!raggruppamento[d.club]) raggruppamento[d.club] = { c: 0, t: 0, n: 0 };
-            raggruppamento[d.club].c += parseFloat(d.carry || 0);
-            raggruppamento[d.club].t += parseFloat(d.total || 0);
-            raggruppamento[d.club].n += 1;
+            if(!medie[d.club]) medie[d.club] = { c: 0, t: 0, n: 0 };
+            medie[d.club].c += parseFloat(d.carry || 0);
+            medie[d.club].t += parseFloat(d.total || 0);
+            medie[d.club].n += 1;
         });
+
+        // Tabella Storico
         const target = document.getElementById(tid);
-        if(target) target.innerHTML = colpi.map(c => `<tr><td><b>${c.club}</b></td><td style="color:var(--accent); font-weight:bold;">${c.carry}m</td><td>${c.total}m</td><td>${c.dispersione}</td></tr>`).join('');
+        if(target) target.innerHTML = colpi.map(c => `
+            <tr>
+                <td><b>${c.club}</b></td>
+                <td style="color:var(--accent); font-weight:bold;">${c.carry}m</td>
+                <td>${c.total}m</td>
+                <td><small>${c.dispersione}</small></td>
+            </tr>`).join('');
+
+        // Medie Bastoni
         const statsTarget = document.getElementById(sid);
         if(statsTarget) {
             let h = "";
-            for(let club in raggruppamento) {
-                let s = raggruppamento[club];
-                h += `<div class="club-stats-card"><b>${club}</b>: Volo ${(s.c/s.n).toFixed(0)}m | Totale ${(s.t/s.n).toFixed(0)}m (${s.n} colpi)</div>`;
+            for(let bastone in medie) {
+                let s = medie[bastone];
+                h += `<div class="club-stats-card">
+                        <b>${bastone}</b>: Volo ${(s.c/s.n).toFixed(0)}m | Totale ${(s.t/s.n).toFixed(0)}m 
+                        <span style="float:right; color:gray; font-size:0.8em;">${s.n} colpi</span>
+                      </div>`;
             }
-            statsTarget.innerHTML = h || "<p>Nessun dato registrato.</p>";
+            statsTarget.innerHTML = h || "<p>Dati insufficienti.</p>";
         }
     });
 }
 
-// --- LOCKER (LIMITE 7 GIORNI) ---
-function caricaLocker(uid) {
-    const unaSettimanaFa = new Date();
-    unaSettimanaFa.setDate(unaSettimanaFa.getDate() - 7);
-    db.collection("locker").where("allievoId", "==", uid).where("data", ">=", unaSettimanaFa).orderBy("data", "desc").onSnapshot(snap => {
-        let h = ""; 
-        snap.forEach(doc => { 
-            let d = doc.data(); 
-            let dataInvio = d.data ? d.data.toDate().toLocaleDateString() : "Oggi";
-            h += `<div class="msg-card"><small>${dataInvio}</small><p>${d.messaggio}</p>${d.link ? `<a href="${d.link}" target="_blank">VEDI ANALISI</a>` : ''}</div>`; 
-        }); 
-        document.getElementById('locker-contenuto').innerHTML = h || "<p>Nessun feedback recente.</p>"; 
-    });
-}
-
-// --- LOGICA COLLEGAMENTO MAESTRI (VERSIONE ADMIN) ---
+// --- NUOVA GESTIONE MAESTRI DINAMICA ---
 async function richiediCollegamento() {
-    let alias = document.getElementById('p-maestro-id').value.trim();
-    if(!alias) return alert("Inserisci Nome Maestro o ID");
+    let input = document.getElementById('p-maestro-id').value.trim();
+    if(!input) return alert("Inserisci Nome Maestro o ID");
 
-    // Cerco se il nome inserito è un "Alias" registrato nel DB
-    const maestroRef = await db.collection("maestri").doc(alias.toUpperCase()).get();
-    let idFinale = alias;
+    // Cerco se esiste un alias nel database (es: "PIOVANO")
+    const maestroRef = await db.collection("maestri").doc(input.toUpperCase()).get();
+    let idFinale = input;
 
     if (maestroRef.exists) {
         idFinale = maestroRef.data().maestroId;
-        console.log("Maestro trovato via database:", idFinale);
     }
 
     db.collection("utenti").doc(auth.currentUser.uid).update({ 
         maestroId: idFinale, 
         maestroStato: "pending" 
-    }).then(() => alert("Richiesta inviata! Aspetta la conferma del Maestro."));
+    }).then(() => alert("Richiesta inviata!"));
 }
 
-// --- AREA MAESTRO ---
-function caricaDashboardMaestro(mId) {
-    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").onSnapshot(snap => {
-        let h = ""; snap.forEach(doc => { const d = doc.data(); h += `<div class="allievo-item" onclick="apriDettaglioMaestro('${doc.id}', '${d.nome}', '${d.telefono || ""}')"><b>${d.nome}</b> (HCP ${d.hcp})</div>`; });
-        document.getElementById('lista-allievi').innerHTML = h || "<p>Nessun allievo collegato.</p>";
-    });
-    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "pending").onSnapshot(snap => {
-        let h = ""; snap.forEach(doc => { h += `<div class="allievo-item">${doc.data().nome} <button onclick="confermaAllievo('${doc.id}')">Accetta</button></div>`; });
-        document.getElementById('lista-richieste').innerHTML = h;
-    });
-}
-
-async function confermaAllievo(uid) { await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); }
-
-// --- FUNZIONI DI SERVIZIO ---
+// --- FUNZIONI DI BASE ---
 function vaiA(id) { 
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); 
     document.getElementById(id).classList.add('active'); 
@@ -190,16 +189,34 @@ function vaiA(id) {
 async function salvaColpo(direzione) {
     const carry = document.getElementById('m-carry').value;
     const total = document.getElementById('m-total').value;
-    const disp = document.getElementById('m-disp-val').value || 0;
-    if(!carry || !total) return alert("Dati mancanti!");
+    if(!carry || !total) return alert("Inserisci i dati!");
     await db.collection("colpi").add({
         userId: auth.currentUser.uid,
         club: document.getElementById('m-club').value,
         carry: carry, total: total,
-        dispersione: direzione === "Centro" ? "Centro" : `${disp}m ${direzione==='Sinistra'?'SX':'DX'}`,
+        dispersione: direzione === "Centro" ? "Centro" : `${document.getElementById('m-disp-val').value}m ${direzione}`,
         data: firebase.firestore.FieldValue.serverTimestamp()
     });
     chiudiModal();
+}
+
+function caricaDashboardMaestro(mId) {
+    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").onSnapshot(snap => {
+        let h = ""; 
+        snap.forEach(doc => { 
+            const d = doc.data(); 
+            h += `<div class="allievo-item" onclick="apriDettaglioMaestro('${doc.id}', '${d.nome}', '${d.telefono || ""}')">
+                    <b>${d.nome}</b> (HCP ${d.hcp}) <span style="float:right;">➔</span>
+                  </div>`; 
+        });
+        document.getElementById('lista-allievi').innerHTML = h || "<p>Nessun allievo.</p>";
+    });
+    db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "pending").onSnapshot(snap => {
+        let h = ""; snap.forEach(doc => { 
+            h += `<div class="allievo-item">${doc.data().nome} <button onclick="confermaAllievo('${doc.id}')" style="float:right;">Accetta</button></div>`; 
+        });
+        document.getElementById('lista-richieste').innerHTML = h;
+    });
 }
 
 function apriDettaglioMaestro(id, nome, tel) { 
@@ -209,26 +226,13 @@ function apriDettaglioMaestro(id, nome, tel) {
     aggiornaTabellaEStats(id, 'body-maestro-view', 'maestro-club-stats-view'); 
 }
 
-async function inviaContenuto() {
-    await db.collection("locker").add({
-        allievoId: idAllievoSelezionato,
-        maestroId: auth.currentUser.uid,
-        messaggio: document.getElementById('coach-msg').value,
-        link: document.getElementById('coach-file').value,
-        data: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    alert("Inviato!");
-    document.getElementById('modal-allievo-dettaglio').style.display='none';
-}
-
+async function confermaAllievo(uid) { await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); }
 function logout() { auth.signOut().then(() => location.reload()); }
 function gestisciAuth() { auth.signInWithEmailAndPassword(document.getElementById('auth-email').value, document.getElementById('auth-password').value).catch(e => alert(e.message)); }
 function registraUtente() {
     const e = document.getElementById('reg-email').value, p = document.getElementById('reg-password').value;
     auth.createUserWithEmailAndPassword(e, p).then(res => {
-        return db.collection("utenti").doc(res.user.uid).set({ 
-            nome: document.getElementById('reg-nome').value, ruolo: "allievo", hcp: 54, maestroId: "", maestroStato: "" 
-        });
+        return db.collection("utenti").doc(res.user.uid).set({ nome: document.getElementById('reg-nome').value, ruolo: "allievo", hcp: 54, maestroId: "", maestroStato: "" });
     }).catch(err => alert(err.message));
 }
 async function salvaProfilo() { 
@@ -241,8 +245,7 @@ function apriModal() { document.getElementById('modal-inserimento').style.displa
 function chiudiModal() { document.getElementById('modal-inserimento').style.display='none'; }
 function caricaAdminPanel() {
     db.collection("utenti").onSnapshot(snap => {
-        let h = "<table><tr><th>Nome</th><th>Ruolo</th></tr>";
-        snap.forEach(doc => { const d = doc.data(); h += `<tr><td>${d.nome}</td><td>${d.ruolo}</td></tr>`; });
+        let h = "<table>"; snap.forEach(doc => { const d = doc.data(); h += `<tr><td>${d.nome}</td><td>${d.ruolo}</td></tr>`; });
         document.getElementById('lista-utenti-admin').innerHTML = h + "</table>";
     });
 }
