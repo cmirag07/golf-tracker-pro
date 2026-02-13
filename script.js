@@ -58,13 +58,13 @@ auth.onAuthStateChanged(async (user) => {
     } else { vaiA('auth-screen'); }
 });
 
+// FUNZIONE COLPI (Mantiene limite 80 per sicurezza crediti)
 function aggiornaTabellaEStats(uid, tid, sid) {
     db.collection("colpi")
       .where("userId", "==", uid)
       .orderBy("data", "desc")
       .limit(80) 
-      .get() 
-      .then(snap => {
+      .onSnapshot(snap => { // Ripristinato onSnapshot per vedere i colpi appena salvati
         let colpi = [];
         let raggruppamento = {};
         snap.forEach(doc => {
@@ -91,7 +91,7 @@ function aggiornaTabellaEStats(uid, tid, sid) {
     });
 }
 
-// MODIFICA LOCKER: VISUALIZZA SOLO ULTIMI 7 GIORNI
+// LOCKER: FILTRO 7 GIORNI
 function caricaLocker(uid) {
     const unaSettimanaFa = new Date();
     unaSettimanaFa.setDate(unaSettimanaFa.getDate() - 7);
@@ -100,8 +100,7 @@ function caricaLocker(uid) {
       .where("allievoId", "==", uid)
       .where("data", ">=", unaSettimanaFa)
       .orderBy("data", "desc")
-      .get()
-      .then(snap => {
+      .onSnapshot(snap => {
         let h = ""; 
         snap.forEach(doc => { 
             let d = doc.data(); 
@@ -112,17 +111,14 @@ function caricaLocker(uid) {
                     ${d.link ? `<a href="${d.link}" target="_blank" style="color:var(--maestro-color); font-weight:bold; text-decoration:none;">📺 VEDI VIDEO ANALISI</a>` : ''}
                   </div>`; 
         }); 
-        document.getElementById('locker-contenuto').innerHTML = h || "<p style='text-align:center;'>Non ci sono feedback negli ultimi 7 giorni.</p>"; 
-    }).catch(err => {
-        console.error("Errore Locker:", err);
-        // NOTA: Se la bacheca è vuota, controlla la console browser (F12) per il link dell'indice!
+        document.getElementById('locker-contenuto').innerHTML = h || "<p style='text-align:center;'>Nessun messaggio negli ultimi 7 giorni.</p>"; 
     });
 }
 
-// MODIFICA ALIAS PIOVANO
+// ALIAS PIOVANO
 function richiediCollegamento() {
     let mId = document.getElementById('p-maestro-id').value.trim();
-    if(!mId) return alert("Inserisci ID");
+    if(!mId) return alert("Inserisci ID Maestro o codice speciale");
 
     if(mId.toUpperCase() === "PIOVANO") {
         mId = "oLcxhOVc6VXjmZsD7CkAjtW8Fqg2";
@@ -133,7 +129,7 @@ function richiediCollegamento() {
 }
 
 function caricaAdminPanel() {
-    db.collection("utenti").get().then(snap => {
+    db.collection("utenti").onSnapshot(snap => {
         let h = "<table><tr><th>Nome</th><th>Ruolo</th></tr>";
         snap.forEach(doc => {
             const d = doc.data();
@@ -152,9 +148,7 @@ function vaiA(id) {
     if(id === 'admin-screen') caricaAdminPanel();
 }
 
-// LOGICA MAESTRO: FIX NOTIFICHE E LISTA
 function caricaDashboardMaestro(mId) {
-    // Carica allievi confermati
     db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "confermato").onSnapshot(snap => {
         let h = ""; 
         snap.forEach(doc => { 
@@ -164,12 +158,8 @@ function caricaDashboardMaestro(mId) {
         document.getElementById('lista-allievi').innerHTML = h || "<p>Nessun allievo collegato.</p>";
     });
     
-    // Carica allievi in attesa (Notifiche)
     db.collection("utenti").where("maestroId", "==", mId).where("maestroStato", "==", "pending").onSnapshot(snap => {
-        let h = ""; 
-        snap.forEach(doc => { 
-            h += `<div class="allievo-item" style="border-left:5px solid var(--orange);"><span>${doc.data().nome}</span><button onclick="confermaAllievo('${doc.id}')" style="background:var(--accent); color:white; border:none; padding:8px 15px; border-radius:8px;">ACCETTA</button></div>`; 
-        });
+        let h = ""; snap.forEach(doc => { h += `<div class="allievo-item"><span>${doc.data().nome}</span><button onclick="confermaAllievo('${doc.id}')" style="background:var(--accent); color:white; border:none; padding:5px 10px; border-radius:5px;">Accetta</button></div>`; });
         document.getElementById('lista-richieste').innerHTML = h;
     });
 }
@@ -188,7 +178,6 @@ async function salvaColpo(direzione) {
         data: firebase.firestore.FieldValue.serverTimestamp()
     });
     chiudiModal();
-    aggiornaTabellaEStats(auth.currentUser.uid, 'body-allievo', 'allievo-club-stats');
 }
 
 function logout() { auth.signOut().then(() => location.reload()); }
@@ -222,26 +211,21 @@ function apriDettaglioMaestro(id, nome, tel) {
     aggiornaTabellaEStats(id, 'body-maestro-view', 'maestro-club-stats-view'); 
 }
 async function inviaContenuto() {
-    const msg = document.getElementById('coach-msg').value;
-    if(!msg) return alert("Scrivi un messaggio!");
     await db.collection("locker").add({
         allievoId: idAllievoSelezionato,
         maestroId: auth.currentUser.uid,
-        messaggio: msg,
+        messaggio: document.getElementById('coach-msg').value,
         link: document.getElementById('coach-file').value,
         data: firebase.firestore.FieldValue.serverTimestamp()
     });
     alert("Feedback inviato!");
-    document.getElementById('coach-msg').value = "";
-    document.getElementById('coach-file').value = "";
     document.getElementById('modal-allievo-dettaglio').style.display='none';
 }
-async function confermaAllievo(uid) { 
-    await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); 
-    alert("Allievo confermato!");
-}
+async function confermaAllievo(uid) { await db.collection("utenti").doc(uid).update({ maestroStato: "confermato" }); }
 function apriModal() { document.getElementById('modal-inserimento').style.display='flex'; }
 function chiudiModal() { document.getElementById('modal-inserimento').style.display='none'; }
+
+// LOGICA SCORECARD ORIGINALE (RIPRISTINATA)
 function inizializzaGiro() {
     const nome = document.getElementById('select-campo').value;
     const campo = mappaCampi[nome];
